@@ -10,6 +10,7 @@ public class Tensor
     public bool RequiresGrad { get; set; }
     public List<Tensor>? Parents { get; set; }
     public Action<Tensor>? BackwardFn { get; set; }
+    public DataType Dtype { get; set; }
 
     public int[] Shape => _shape;
     public int Size => _data.Length;
@@ -18,13 +19,14 @@ public class Tensor
     // Internal access to data for gradient operations
     public float[] Data => _data;
 
-    public Tensor(float[] data, int[] shape, bool requiresGrad = false)
+    public Tensor(float[] data, int[] shape, bool requiresGrad = false, DataType dtype = DataType.Float32)
     {
         _data = data;
         _shape = shape;
         _strides = ComputeStrides(shape);
 
         RequiresGrad = requiresGrad;
+        Dtype = dtype;
 
         if (requiresGrad)
         {
@@ -32,30 +34,30 @@ public class Tensor
         }
     }
 
-    public static Tensor Zeros(int[] shape)
+    public static Tensor Zeros(int[] shape, DataType dtype = DataType.Float32)
     {
         if(shape.Length < 1) throw new ArgumentOutOfRangeException(nameof(shape));
-        
+
         var length =  1;
         foreach(var dimension in shape) length *= dimension;
-        
-        return new Tensor(new float[length], shape);
+
+        return new Tensor(new float[length], shape, false, dtype);
     }
-    
-    public static Tensor Ones(int[] shape)
+
+    public static Tensor Ones(int[] shape, DataType dtype = DataType.Float32)
     {
         if(shape.Length < 1) throw new ArgumentOutOfRangeException(nameof(shape));
-        
+
         var length =  1;
         foreach(var dimension in shape) length *= dimension;
-        
+
         var contents = new float[length];
         for (int i = 0; i < length; i++)
         {
             contents[i] = 1;
         }
-        
-        return new Tensor(contents, shape);
+
+        return new Tensor(contents, shape, false, dtype);
     }
     
     public float this[int[] indices]
@@ -147,7 +149,7 @@ public class Tensor
         var newShape = new int[_shape.Length];
         Array.Copy(_shape, newShape, _shape.Length);
 
-        return new Tensor(newData, newShape, RequiresGrad);
+        return new Tensor(newData, newShape, RequiresGrad, Dtype);
     }
     
     private int[] ComputeStrides(int[] shape)
