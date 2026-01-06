@@ -60,5 +60,8 @@ public static class PrecisionConverter
 /// </summary>
 public interface ITensor
 {
-    // Placeholder interface - to be implemented in subsequent specs
+    /// <summary>
+    /// Gets the precision of the tensor
+    /// </summary>
+    Precision Precision { get; }
 }

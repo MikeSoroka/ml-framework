@@ -8,7 +8,7 @@ public class PrecisionConverterTests
 {
     public class TestTensor : ITensor
     {
-        // Mock tensor implementation for testing
+        public Precision Precision => Precision.FP32;  // Default precision for testing
     }
 
     [Fact]
