@@ -85,7 +85,8 @@ public class MixedPrecisionOptimizer : IOptimizer
         _options.Validate();
 
         _lossScaler = new DynamicLossScaler(_options);
-        _gradientLayer = new GradientConversionLayer(_options, _lossScaler, null);
+        var precisionManager = new PrecisionManager(_options);
+        _gradientLayer = new GradientConversionLayer(_options, _lossScaler, precisionManager);
 
         if (_options.EnablePerformanceMonitoring)
         {

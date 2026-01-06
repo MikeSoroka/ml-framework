@@ -223,9 +223,36 @@ public class DynamicLossScaler
 
     private bool HasOverflow(Tensor tensor)
     {
-        // Check for NaN or Inf values
-        // Since we don't have direct access to tensor data, this is a stub
-        // TODO: Implement based on tensor API when available
+        // Check for NaN or Inf values by iterating through tensor data
+        // We'll check each element in the tensor
+        int[] shape = tensor.Shape;
+        int totalElements = 1;
+        foreach (int dim in shape)
+        {
+            totalElements *= dim;
+        }
+
+        // For each element, we need to construct indices
+        int[] indices = new int[shape.Length];
+        for (int i = 0; i < totalElements; i++)
+        {
+            // Convert flat index to multi-dimensional indices
+            int temp = i;
+            for (int j = shape.Length - 1; j >= 0; j--)
+            {
+                indices[j] = temp % shape[j];
+                temp /= shape[j];
+            }
+
+            float value = tensor[indices];
+
+            // Check for NaN or Infinity
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
