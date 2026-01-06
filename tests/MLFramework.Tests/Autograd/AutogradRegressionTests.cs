@@ -177,7 +177,7 @@ public class AutogradRegressionTests : IDisposable
         // w = torch.tensor([2.0], requires_grad=True)
         // y = x * w
         // y.backward()
-        # // x.grad = 2.0, w.grad = 1.0
+        // x.grad = 2.0, w.grad = 1.0
 
         var x = new Tensor(new float[] { 1.0f }, new int[] { 1 }, requiresGrad: true);
         var w = new Tensor(new float[] { 2.0f }, new int[] { 1 }, requiresGrad: true);
@@ -210,7 +210,7 @@ public class AutogradRegressionTests : IDisposable
         // x = torch.tensor([2.0], requires_grad=True)
         // y = x ** 2 + 2 * x + 1
         // y.backward()
-        # // x.grad = 2*2 + 2 = 6
+        // x.grad = 2*2 + 2 = 6
 
         var x = new Tensor(new float[] { 2.0f }, new int[] { 1 }, requiresGrad: true);
         var y = new Tensor(new float[] { 9.0f }, new int[] { 1 }); // 2^2 + 2*2 + 1 = 9
@@ -397,4 +397,5 @@ public class AutogradRegressionTests : IDisposable
         // Gradients should be equal
         Assert.Equal(grad1, grad2, precision: 4);
     }
+    #endregion
 }
