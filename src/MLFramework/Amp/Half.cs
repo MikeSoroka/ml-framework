@@ -136,9 +136,9 @@ namespace MLFramework.Amp
         {
             unsafe
             {
-                uint sign = (uint)(half >> 15) << 31;
+                uint sign = ((uint)half >> 15) << 31;
                 uint exponent = (uint)((half >> 10) & 0x1F);
-                uint mantissa = half & 0x3FF;
+                uint mantissa = (uint)(half & 0x3FF);
 
                 if (exponent == 0)
                 {

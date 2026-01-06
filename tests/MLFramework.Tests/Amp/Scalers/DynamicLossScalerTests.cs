@@ -1,4 +1,4 @@
-using MLFramework.Optimizers.MixedPrecision;
+using System;
 using RitterFramework.Core.Tensor;
 using Xunit;
 
@@ -10,109 +10,133 @@ namespace MLFramework.Tests.Amp.Scalers;
 public class DynamicLossScalerTests
 {
     [Fact]
-    public void Constructor_WithOptions_CreatesScaler()
-    {
-        var options = MixedPrecisionOptions.ForFP16();
-        var scaler = new DynamicLossScaler(options);
-
-        Assert.NotNull(scaler);
-        Assert.True(scaler.IsEnabled);
-    }
-
-    [Fact]
-    public void Constructor_WithNullOptions_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() =>
-            new DynamicLossScaler(null!));
-    }
-
-    [Fact]
-    public void Constructor_WithDefaultOptions_CreatesScaler()
+    public void Constructor_Default_CreatesScalerWithDefaults()
     {
         var scaler = new DynamicLossScaler();
 
         Assert.NotNull(scaler);
-        Assert.True(scaler.IsEnabled);
+        Assert.True(scaler.Enabled);
+        Assert.Equal(65536.0f, scaler.Scale);
+        Assert.Equal(2.0f, scaler.GrowthFactor);
+        Assert.Equal(0.5f, scaler.BackoffFactor);
+        Assert.Equal(2000, scaler.GrowthInterval);
+        Assert.Equal(1.0f, scaler.MinScale);
+        Assert.Equal(16777216.0f, scaler.MaxScale);
     }
 
     [Fact]
-    public void CurrentScale_InitializesToInitialLossScale()
+    public void Constructor_CustomParameters_SetsCorrectValues()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 1000.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            growthFactor: 3.0f,
+            backoffFactor: 0.25f,
+            growthInterval: 1000,
+            minScale: 0.5f,
+            maxScale: 10000.0f,
+            enabled: true
+        );
 
-        Assert.Equal(1000.0f, scaler.CurrentScale);
+        Assert.Equal(1000.0f, scaler.Scale);
+        Assert.Equal(3.0f, scaler.GrowthFactor);
+        Assert.Equal(0.25f, scaler.BackoffFactor);
+        Assert.Equal(1000, scaler.GrowthInterval);
+        Assert.Equal(0.5f, scaler.MinScale);
+        Assert.Equal(10000.0f, scaler.MaxScale);
+        Assert.True(scaler.Enabled);
     }
 
     [Fact]
-    public void ConsecutiveOverflows_InitializesToZero()
+    public void Constructor_InvalidInitialScale_ThrowsArgumentException()
     {
-        var scaler = new DynamicLossScaler();
-
-        Assert.Equal(0, scaler.ConsecutiveOverflows);
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(initialScale: -1.0f));
     }
 
     [Fact]
-    public void StepsSinceLastOverflow_InitializesToZero()
+    public void Constructor_InvalidGrowthFactor_ThrowsArgumentException()
     {
-        var scaler = new DynamicLossScaler();
-
-        Assert.Equal(0, scaler.StepsSinceLastOverflow);
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(growthFactor: 0.5f));
     }
 
     [Fact]
-    public void TotalOverflows_InitializesToZero()
+    public void Constructor_InvalidBackoffFactor_ThrowsArgumentException()
     {
-        var scaler = new DynamicLossScaler();
-
-        Assert.Equal(0, scaler.TotalOverflows);
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(backoffFactor: 1.5f));
     }
 
     [Fact]
-    public void IsEnabled_ReflectsOptions()
+    public void Constructor_InvalidGrowthInterval_ThrowsArgumentException()
     {
-        var options = new MixedPrecisionOptions
-        {
-            EnableDynamicLossScaling = true
-        };
-        var enabledScaler = new DynamicLossScaler(options);
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(growthInterval: -1));
+    }
 
-        options.EnableDynamicLossScaling = false;
-        var disabledScaler = new DynamicLossScaler(options);
+    [Fact]
+    public void Constructor_InvalidMinScale_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(minScale: -1.0f));
+    }
 
-        Assert.True(enabledScaler.IsEnabled);
-        Assert.False(disabledScaler.IsEnabled);
+    [Fact]
+    public void Constructor_MaxScaleLessThanMinScale_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(minScale: 100.0f, maxScale: 50.0f));
+    }
+
+    [Fact]
+    public void Constructor_InitialScaleOutsideBounds_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new DynamicLossScaler(initialScale: 200.0f, minScale: 100.0f, maxScale: 150.0f));
+    }
+
+    [Fact]
+    public void Constructor_Disabled_CreatesDisabledScaler()
+    {
+        var scaler = new DynamicLossScaler(enabled: false);
+
+        Assert.False(scaler.Enabled);
     }
 
     [Fact]
     public void ScaleLoss_WithEnabled_ScalesLoss()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 2.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 2.0f);
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = 10.0f;
 
         var scaled = scaler.ScaleLoss(tensor);
 
-        Assert.NotNull(scaled);
+        Assert.Equal(20.0f, scaled[0]);
     }
 
     [Fact]
     public void ScaleLoss_WithDisabled_ReturnsOriginal()
     {
-        var options = new MixedPrecisionOptions
-        {
-            EnableDynamicLossScaling = false
-        };
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 2.0f, enabled: false);
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = 10.0f;
 
         var scaled = scaler.ScaleLoss(tensor);
 
-        Assert.Equal(tensor, scaled);
+        Assert.Equal(10.0f, scaled[0]);
+    }
+
+    [Fact]
+    public void ScaleLoss_WithUnitScale_ReturnsOriginal()
+    {
+        var scaler = new DynamicLossScaler(initialScale: 1.0f);
+        var tensor = new Tensor(new[] { 1 });
+        tensor[0] = 10.0f;
+
+        var scaled = scaler.ScaleLoss(tensor);
+
+        Assert.Equal(10.0f, scaled[0]);
     }
 
     [Fact]
@@ -125,42 +149,57 @@ public class DynamicLossScalerTests
     }
 
     [Fact]
-    public void UnscaleGradients_WithEnabled_UnscalesGradients()
+    public void UnscaleGradient_WithEnabled_UnscalesGradient()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 2.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 2.0f);
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = 10.0f;
 
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
+        var unscaled = scaler.UnscaleGradient(tensor);
 
-        var unscaled = scaler.UnscaleGradients(gradients);
-
-        Assert.NotNull(unscaled);
-        Assert.Single(unscaled);
+        Assert.Equal(5.0f, unscaled[0]);
     }
 
     [Fact]
-    public void UnscaleGradients_WithDisabled_ReturnsOriginal()
+    public void UnscaleGradient_WithDisabled_ReturnsOriginal()
     {
-        var options = new MixedPrecisionOptions
-        {
-            EnableDynamicLossScaling = false
-        };
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 2.0f, enabled: false);
         var tensor = new Tensor(new[] { 1 });
+        tensor[0] = 10.0f;
+
+        var unscaled = scaler.UnscaleGradient(tensor);
+
+        Assert.Equal(10.0f, unscaled[0]);
+    }
+
+    [Fact]
+    public void UnscaleGradient_WithNullTensor_ThrowsArgumentNullException()
+    {
+        var scaler = new DynamicLossScaler();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            scaler.UnscaleGradient(null!));
+    }
+
+    [Fact]
+    public void UnscaleGradients_WithEnabled_UnscalesAllGradients()
+    {
+        var scaler = new DynamicLossScaler(initialScale: 2.0f);
+        var tensor1 = new Tensor(new[] { 1 });
+        tensor1[0] = 10.0f;
+        var tensor2 = new Tensor(new[] { 1 });
+        tensor2[0] = 20.0f;
+
         var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
         {
-            ["param1"] = tensor
+            ["param1"] = tensor1,
+            ["param2"] = tensor2
         };
 
         var unscaled = scaler.UnscaleGradients(gradients);
 
-        Assert.Equal(gradients, unscaled);
+        Assert.Equal(5.0f, unscaled["param1"][0]);
+        Assert.Equal(10.0f, unscaled["param2"][0]);
     }
 
     [Fact]
@@ -179,12 +218,7 @@ public class DynamicLossScalerTests
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = float.PositiveInfinity;
 
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
-
-        Assert.True(scaler.CheckOverflow(gradients));
+        Assert.True(scaler.CheckOverflow(tensor));
     }
 
     [Fact]
@@ -194,12 +228,7 @@ public class DynamicLossScalerTests
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = float.NaN;
 
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
-
-        Assert.True(scaler.CheckOverflow(gradients));
+        Assert.True(scaler.CheckOverflow(tensor));
     }
 
     [Fact]
@@ -210,12 +239,34 @@ public class DynamicLossScalerTests
         tensor[0] = 1.0f;
         tensor[1] = 2.0f;
 
+        Assert.False(scaler.CheckOverflow(tensor));
+    }
+
+    [Fact]
+    public void CheckOverflow_WithMultipleGradients_EarlyExitOnOverflow()
+    {
+        var scaler = new DynamicLossScaler();
+        var tensor1 = new Tensor(new[] { 1 });
+        tensor1[0] = 1.0f;
+        var tensor2 = new Tensor(new[] { 1 });
+        tensor2[0] = float.PositiveInfinity;
+
         var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
         {
-            ["param1"] = tensor
+            ["param1"] = tensor1,
+            ["param2"] = tensor2
         };
 
-        Assert.False(scaler.CheckOverflow(gradients));
+        Assert.True(scaler.CheckOverflow(gradients));
+    }
+
+    [Fact]
+    public void CheckOverflow_WithNullTensor_ThrowsArgumentNullException()
+    {
+        var scaler = new DynamicLossScaler();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            scaler.CheckOverflow((Tensor)null!));
     }
 
     [Fact]
@@ -224,108 +275,113 @@ public class DynamicLossScalerTests
         var scaler = new DynamicLossScaler();
 
         Assert.Throws<ArgumentNullException>(() =>
-            scaler.CheckOverflow(null!));
+            scaler.CheckOverflow((System.Collections.Generic.Dictionary<string, Tensor>)null!));
     }
 
     [Fact]
     public void CheckOverflow_WithDisabled_ReturnsFalse()
     {
-        var options = new MixedPrecisionOptions
-        {
-            EnableDynamicLossScaling = false
-        };
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(enabled: false);
         var tensor = new Tensor(new[] { 1 });
         tensor[0] = float.PositiveInfinity;
 
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
-
-        Assert.False(scaler.CheckOverflow(gradients));
+        Assert.False(scaler.CheckOverflow(tensor));
     }
 
     [Fact]
     public void UpdateScale_Overflow_DecreasesScale()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 1000.0f;
-        options.BackoffFactor = 0.5f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            backoffFactor: 0.5f
+        );
 
-        var skipStep = scaler.UpdateScale(hadOverflow: true);
+        var skipStep = scaler.UpdateScale(overflow: true);
 
         Assert.True(skipStep);
-        Assert.Equal(500.0f, scaler.CurrentScale);
+        Assert.Equal(500.0f, scaler.Scale);
         Assert.Equal(1, scaler.TotalOverflows);
-        Assert.Equal(1, scaler.ConsecutiveOverflows);
+        Assert.Equal(0, scaler.GrowthCounter);
     }
 
     [Fact]
-    public void UpdateScale_NoOverflow_IncreasesCounter()
+    public void UpdateScale_NoOverflow_IncrementsCounter()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.GrowthInterval = 2000;
-        var scaler = new DynamicLossScaler(options);
-        var initialScale = scaler.CurrentScale;
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            growthInterval: 2000
+        );
+        var initialScale = scaler.Scale;
 
         for (int i = 0; i < 1999; i++)
         {
-            scaler.UpdateScale(hadOverflow: false);
+            scaler.UpdateScale(overflow: false);
         }
 
-        Assert.Equal(initialScale, scaler.CurrentScale);
-        Assert.Equal(1999, scaler.StepsSinceLastOverflow);
-        Assert.Equal(0, scaler.ConsecutiveOverflows);
+        Assert.Equal(initialScale, scaler.Scale);
+        Assert.Equal(1999, scaler.GrowthCounter);
     }
 
     [Fact]
     public void UpdateScale_AfterGrowthInterval_IncreasesScale()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 1000.0f;
-        options.GrowthInterval = 2;
-        options.GrowthFactor = 2.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            growthInterval: 2,
+            growthFactor: 2.0f
+        );
 
-        scaler.UpdateScale(hadOverflow: false);
-        scaler.UpdateScale(hadOverflow: false);
+        scaler.UpdateScale(overflow: false);
+        scaler.UpdateScale(overflow: false);
 
-        Assert.Equal(2000.0f, scaler.CurrentScale);
-        Assert.Equal(0, scaler.StepsSinceLastOverflow);
+        Assert.Equal(2000.0f, scaler.Scale);
+        Assert.Equal(0, scaler.GrowthCounter);
     }
 
     [Fact]
     public void UpdateScale_RespectsMinScale()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 100.0f;
-        options.MinLossScale = 10.0f;
-        options.BackoffFactor = 0.5f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 100.0f,
+            minScale: 10.0f,
+            backoffFactor: 0.5f
+        );
 
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: true);
 
-        Assert.Equal(10.0f, scaler.CurrentScale);
+        Assert.Equal(10.0f, scaler.Scale);
     }
 
     [Fact]
     public void UpdateScale_RespectsMaxScale()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 100.0f;
-        options.MaxLossScale = 200.0f;
-        options.GrowthInterval = 1;
-        options.GrowthFactor = 10.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 100.0f,
+            maxScale: 200.0f,
+            growthInterval: 1,
+            growthFactor: 10.0f
+        );
 
-        scaler.UpdateScale(hadOverflow: false);
+        scaler.UpdateScale(overflow: false);
 
-        Assert.Equal(200.0f, scaler.CurrentScale);
+        Assert.Equal(200.0f, scaler.Scale);
+    }
+
+    [Fact]
+    public void UpdateScale_WithDisabled_ReturnsFalse()
+    {
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            enabled: false
+        );
+
+        var skipStep = scaler.UpdateScale(overflow: true);
+
+        Assert.False(skipStep);
+        Assert.Equal(1000.0f, scaler.Scale);
     }
 
     [Fact]
@@ -333,135 +389,209 @@ public class DynamicLossScalerTests
     {
         var scaler = new DynamicLossScaler();
 
-        scaler.UpdateScale(hadOverflow: false);
+        scaler.UpdateScale(overflow: false);
 
-        Assert.Equal(1, scaler.StepsSinceLastOverflow);
+        Assert.Equal(1, scaler.GrowthCounter);
     }
 
     [Fact]
     public void GrowthCounter_ResetsOnOverflow()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.GrowthInterval = 10;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(growthInterval: 10);
 
         for (int i = 0; i < 5; i++)
         {
-            scaler.UpdateScale(hadOverflow: false);
+            scaler.UpdateScale(overflow: false);
         }
-        Assert.Equal(5, scaler.StepsSinceLastOverflow);
+        Assert.Equal(5, scaler.GrowthCounter);
 
-        scaler.UpdateScale(hadOverflow: true);
+        scaler.UpdateScale(overflow: true);
 
-        Assert.Equal(0, scaler.StepsSinceLastOverflow);
-    }
-
-    [Fact]
-    public void ConsecutiveOverflows_ResetsOnNoOverflow()
-    {
-        var scaler = new DynamicLossScaler();
-
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
-        Assert.Equal(2, scaler.ConsecutiveOverflows);
-
-        scaler.UpdateScale(hadOverflow: false);
-
-        Assert.Equal(0, scaler.ConsecutiveOverflows);
-    }
-
-    [Fact]
-    public void CheckOverflowAndUpdate_WorksWithOverflow()
-    {
-        var scaler = new DynamicLossScaler();
-        var tensor = new Tensor(new[] { 1 });
-        tensor[0] = float.PositiveInfinity;
-
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
-
-        var shouldSkip = scaler.CheckOverflowAndUpdate(gradients);
-
-        Assert.True(shouldSkip);
-    }
-
-    [Fact]
-    public void CheckOverflowAndUpdate_WorksWithoutOverflow()
-    {
-        var scaler = new DynamicLossScaler();
-        var tensor = new Tensor(new[] { 1 });
-        tensor[0] = 1.0f;
-
-        var gradients = new System.Collections.Generic.Dictionary<string, Tensor>
-        {
-            ["param1"] = tensor
-        };
-
-        var shouldSkip = scaler.CheckOverflowAndUpdate(gradients);
-
-        Assert.False(shouldSkip);
+        Assert.Equal(0, scaler.GrowthCounter);
     }
 
     [Fact]
     public void Reset_RestoresInitialState()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 1000.0f;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 1000.0f);
 
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: false);
-        scaler.UpdateScale(hadOverflow: false);
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: false);
+        scaler.UpdateScale(overflow: false);
 
         Assert.Equal(1, scaler.TotalOverflows);
-        Assert.Equal(2, scaler.StepsSinceLastOverflow);
+        Assert.Equal(2, scaler.GrowthCounter);
 
         scaler.Reset();
 
-        Assert.Equal(1000.0f, scaler.CurrentScale);
+        Assert.Equal(1000.0f, scaler.Scale);
         Assert.Equal(0, scaler.TotalOverflows);
-        Assert.Equal(0, scaler.StepsSinceLastOverflow);
-        Assert.Equal(0, scaler.ConsecutiveOverflows);
+        Assert.Equal(0, scaler.GrowthCounter);
     }
 
     [Fact]
     public void GetStats_ReturnsCorrectStatistics()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.InitialLossScale = 1000.0f;
-        options.MaxConsecutiveOverflows = 10;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(initialScale: 1000.0f);
 
-        scaler.UpdateScale(hadOverflow: false);
-        scaler.UpdateScale(hadOverflow: false);
+        scaler.UpdateScale(overflow: false);
+        scaler.UpdateScale(overflow: false);
 
         var stats = scaler.GetStats();
 
         Assert.Equal(1000.0f, stats.CurrentScale);
-        Assert.Equal(2, stats.StepsSinceLastOverflow);
-        Assert.Equal(0, stats.ConsecutiveOverflows);
         Assert.Equal(0, stats.TotalOverflows);
-        Assert.Equal(options.GrowthInterval, stats.GrowthInterval);
-        Assert.Equal(10, stats.MaxConsecutiveOverflows);
-        Assert.True(stats.IsStable);
+        Assert.Equal(2, stats.TotalSuccessfulIterations);
+        Assert.Equal(0, stats.ScaleIncreaseCount);
+        Assert.Equal(0, stats.ScaleDecreaseCount);
+        Assert.Equal(1.0f, stats.SuccessRate);
     }
 
     [Fact]
-    public void GetStats_WithOverflow_ReportsUnstable()
+    public void GetStats_WithOverflow_TracksCorrectly()
     {
-        var options = MixedPrecisionOptions.ForFP16();
-        options.MaxConsecutiveOverflows = 3;
-        var scaler = new DynamicLossScaler(options);
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            backoffFactor: 0.5f
+        );
 
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
-        scaler.UpdateScale(hadOverflow: true);
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: false);
 
         var stats = scaler.GetStats();
 
-        Assert.False(stats.IsStable);
-        Assert.Equal(3, stats.ConsecutiveOverflows);
+        Assert.Equal(500.0f, stats.CurrentScale);
+        Assert.Equal(1, stats.TotalOverflows);
+        Assert.Equal(1, stats.TotalSuccessfulIterations);
+        Assert.Equal(0, stats.ScaleIncreaseCount);
+        Assert.Equal(1, stats.ScaleDecreaseCount);
+        Assert.Equal(0.5f, stats.SuccessRate);
+    }
+
+    [Fact]
+    public void GetStats_TracksMinScaleReached()
+    {
+        var scaler = new DynamicLossScaler(
+            initialScale: 100.0f,
+            backoffFactor: 0.5f
+        );
+
+        scaler.UpdateScale(overflow: true);
+        scaler.UpdateScale(overflow: true);
+
+        var stats = scaler.GetStats();
+
+        Assert.Equal(25.0f, stats.MinScaleReached);
+    }
+
+    [Fact]
+    public void GetStats_TracksMaxScaleReached()
+    {
+        var scaler = new DynamicLossScaler(
+            initialScale: 100.0f,
+            growthInterval: 1,
+            growthFactor: 2.0f
+        );
+
+        scaler.UpdateScale(overflow: false);
+        scaler.UpdateScale(overflow: false);
+
+        var stats = scaler.GetStats();
+
+        Assert.Equal(400.0f, stats.MaxScaleReached);
+    }
+
+    [Fact]
+    public void GetStats_ToString_ReturnsFormattedString()
+    {
+        var scaler = new DynamicLossScaler(initialScale: 1000.0f);
+        scaler.UpdateScale(overflow: false);
+        scaler.UpdateScale(overflow: true);
+
+        var stats = scaler.GetStats();
+        var statsString = stats.ToString();
+
+        Assert.Contains("Scale:", statsString);
+        Assert.Contains("Overflows:", statsString);
+        Assert.Contains("SuccessIterations:", statsString);
+    }
+
+    [Fact]
+    public void GetScaleTensor_ReturnsCorrectTensor()
+    {
+        var scaler = new DynamicLossScaler(initialScale: 1000.0f);
+
+        var scaleTensor = scaler.GetScaleTensor();
+
+        Assert.NotNull(scaleTensor);
+        Assert.Equal(1, scaleTensor.Shape.Length);
+        Assert.Equal(1000.0f, scaleTensor[0]);
+    }
+
+    [Fact]
+    public void GetScaleTensor_WithDisabled_ThrowsInvalidOperationException()
+    {
+        var scaler = new DynamicLossScaler(enabled: false);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            scaler.GetScaleTensor());
+    }
+
+    [Fact]
+    public void GetInverseScaleTensor_ReturnsCorrectTensor()
+    {
+        var scaler = new DynamicLossScaler(initialScale: 1000.0f);
+
+        var inverseTensor = scaler.GetInverseScaleTensor();
+
+        Assert.NotNull(inverseTensor);
+        Assert.Equal(1, inverseTensor.Shape.Length);
+        Assert.Equal(0.001f, inverseTensor[0], precision: 6);
+    }
+
+    [Fact]
+    public void GetInverseScaleTensor_WithDisabled_ThrowsInvalidOperationException()
+    {
+        var scaler = new DynamicLossScaler(enabled: false);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            scaler.GetInverseScaleTensor());
+    }
+
+    [Fact]
+    public void ContinuousOverflow_MultipleDecreases_ScaleClampedToMin()
+    {
+        var scaler = new DynamicLossScaler(
+            initialScale: 1000.0f,
+            minScale: 1.0f,
+            backoffFactor: 0.5f
+        );
+
+        // Trigger many overflows
+        for (int i = 0; i < 20; i++)
+        {
+            scaler.UpdateScale(overflow: true);
+        }
+
+        Assert.Equal(1.0f, scaler.Scale);
+    }
+
+    [Fact]
+    public void ContinuousSuccess_MultipleIncreases_ScaleClampedToMax()
+    {
+        var scaler = new DynamicLossScaler(
+            initialScale: 100.0f,
+            maxScale: 10000.0f,
+            growthInterval: 1,
+            growthFactor: 2.0f
+        );
+
+        // Trigger many successful iterations
+        for (int i = 0; i < 20; i++)
+        {
+            scaler.UpdateScale(overflow: false);
+        }
+
+        Assert.Equal(10000.0f, scaler.Scale);
     }
 }

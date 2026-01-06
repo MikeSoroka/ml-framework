@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using RitterFramework.Core.Tensor;
-using MLFramework.Amp;
-using MLFramework.Optimizers.MixedPrecision;
 
 namespace MLFramework.Amp
 {
@@ -36,19 +34,7 @@ namespace MLFramework.Amp
         /// <param name="enabled">Whether to enable scaling (default: true)</param>
         public GradScaler(float scale = 65536.0f, bool enabled = true)
         {
-            // StaticLossScaler doesn't exist in the codebase, so we'll create a basic wrapper
-            // For now, we'll use DynamicLossScaler with growthInterval = int.MaxValue to simulate static
-            var options = new MixedPrecisionOptions
-            {
-                EnableDynamicLossScaling = enabled,
-                InitialLossScale = scale,
-                GrowthFactor = 1.0f,  // Don't grow
-                BackoffFactor = 0.5f,
-                GrowthInterval = int.MaxValue,  // Never grow
-                MinLossScale = scale,  // Don't shrink below initial
-                MaxLossScale = scale   // Don't grow above initial
-            };
-            _scaler = new DynamicLossScaler(options);
+            _scaler = new StaticLossScaler(scale, enabled);
         }
 
         /// <summary>
@@ -70,17 +56,14 @@ namespace MLFramework.Amp
             float maxScale = 16777216.0f,
             bool enabled = true)
         {
-            var options = new MixedPrecisionOptions
-            {
-                EnableDynamicLossScaling = enabled,
-                InitialLossScale = initialScale,
-                GrowthFactor = growthFactor,
-                BackoffFactor = backoffFactor,
-                GrowthInterval = growthInterval,
-                MinLossScale = minScale,
-                MaxLossScale = maxScale
-            };
-            _scaler = new DynamicLossScaler(options);
+            _scaler = new DynamicLossScaler(
+                initialScale,
+                growthFactor,
+                backoffFactor,
+                growthInterval,
+                minScale,
+                maxScale,
+                enabled);
         }
 
         /// <summary>
@@ -222,20 +205,7 @@ namespace MLFramework.Amp
         /// <returns>Scaler statistics if available, null otherwise</returns>
         public DynamicScalerStats? GetStats()
         {
-            // DynamicLossScaler returns LossScalerStats, not DynamicScalerStats
-            // We'll convert it
-            var stats = (_scaler as DynamicLossScaler)?.GetStats();
-            if (stats == null) return null;
-
-            return new DynamicScalerStats(
-                currentScale: stats.CurrentScale,
-                totalOverflows: stats.TotalOverflows,
-                totalSuccessfulIterations: stats.StepsSinceLastOverflow,
-                scaleIncreaseCount: 0,  // Not tracked in current implementation
-                scaleDecreaseCount: stats.ConsecutiveOverflows,
-                minScaleReached: 0,  // Not tracked in current implementation
-                maxScaleReached: 0   // Not tracked in current implementation
-            );
+            return (_scaler as DynamicLossScaler)?.GetStats();
         }
     }
 }
